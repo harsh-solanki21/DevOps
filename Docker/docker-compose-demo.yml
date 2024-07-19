@@ -1,0 +1,98 @@
+# Docker Compose file version (get the latest version from docker docs to get access of latest features)
+version: "3.8"
+
+services:
+  # Server service configuration
+  server:
+    # Build configuration for the server
+    build:
+      context: ./server # Path to the server directory containing the Dockerfile
+      dockerfile: Dockerfile # Dockerfile to use for building the image
+    image: myapp-server # Name of the Docker image
+    container_name: myapp-node-server # Name of the container
+    command: /usr/src/app/node_modules/.bin/nodemon server.js # Command to run the server using nodemon
+    volumes:
+      - ./server/:/usr/src/app # Mount the server directory to /usr/src/app inside the container
+      - /usr/src/app/node_modules # Ensure node_modules directory is not overwritten
+    ports:
+      - "5000:5000" # Expose port 5000 on the host and map it to port 5000 on the container
+    depends_on:
+      - mongo # Ensure mongo service is started before server
+      - elasticsearch # Ensure elasticsearch service is started before server
+    env_file: ./server/.env # Path to the environment file
+    environment:
+      - NODE_ENV=development
+      - NODE_PORT=3000
+      - ELASTIC_URL=http://elasticsearch:9200
+    networks:
+      - app-network
+    links:
+      - elasticsearch # Link the elasticsearch service for DNS resolution
+
+  mongo:
+    image: mongo # Use the official MongoDB image
+    volumes:
+      - data-volume:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - app-network
+
+  elasticsearch:
+    container_name: tqd-elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.0.1 # Use the specific Elasticsearch image
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    environment:
+      - bootstrap.memory_lock=true # Environment variable to lock memory
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m" # Set Java options for Elasticsearch
+      - discovery.type=single-node # Configure Elasticsearch as a single-node cluster
+    logging:
+      driver: none # Disable logging
+    ports:
+      - 9300:9300
+      - 9200:9200
+    networks:
+      - app-network
+
+  nginx:
+    build:
+      context: ./nginx
+    container_name: nginx
+    hostname: nginx # Hostname for the container
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - app-network
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    image: myapp-client
+    container_name: myapp-react-client
+    command: npm start # Command to run the React app
+    volumes:
+      - ./client/:/usr/app
+      - /usr/app/node_modules
+    depends_on:
+      - server
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+
+# Define networks
+networks:
+  app-network:
+    driver: bridge # Use bridge driver for the network
+
+# Define volumes
+volumes:
+  data-volume: # Volume for MongoDB data
+  esdata: # Volume for Elasticsearch data
+  node_modules: # Volume to persist node_modules directory
+  web-root:
+    driver: local # Use local driver for the volume
